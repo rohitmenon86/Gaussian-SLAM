@@ -8,6 +8,10 @@ import torch
 import json
 import imageio
 
+try:
+    import pyrealsense2 as rs
+except Exception:
+    pass
 
 class BaseDataset(torch.utils.data.Dataset):
 
