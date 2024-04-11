@@ -33,13 +33,23 @@ class GaussianSLAM(object):
         self.scene_name = config["data"]["scene_name"]
         self.dataset_name = config["dataset_name"]
         self.dataset = get_dataset(config["dataset_name"])({**config["data"], **config["cam"]})
+        
+        if self.dataset_name == "realsense":
+            self.n_frames = 1000000
+            self.estimated_c2ws = torch.empty(self.n_frames, 4, 4)
+            self.estimated_c2ws[0] = torch.from_numpy(np.eye(4))
+            self.estimated_c2ws[1] = torch.from_numpy(np.eye(4))
+            self.estimated_c2ws[2] = torch.from_numpy(np.eye(4))
+            frame_ids = list(range(self.n_frames))
+            self.mapping_frame_ids = frame_ids[::config["mapping"]["map_every"]] + [self.n_frames - 1]
 
-        n_frames = len(self.dataset)
-        frame_ids = list(range(n_frames))
-        self.mapping_frame_ids = frame_ids[::config["mapping"]["map_every"]] + [n_frames - 1]
+        else:  
+            self.n_frames = len(self.dataset)
+            self.estimated_c2ws = torch.empty(len(self.dataset), 4, 4)
+            self.estimated_c2ws[0] = torch.from_numpy(self.dataset[0][3])
+            frame_ids = list(range(self.n_frames))
+            self.mapping_frame_ids = frame_ids[::config["mapping"]["map_every"]] + [self.n_frames - 1]
 
-        self.estimated_c2ws = torch.empty(len(self.dataset), 4, 4)
-        self.estimated_c2ws[0] = torch.from_numpy(self.dataset[0][3])
 
         save_dict_to_yaml(config, "config.yaml", directory=self.output_path)
 
@@ -51,7 +61,7 @@ class GaussianSLAM(object):
         if self.submap_using_motion_heuristic:
             self.new_submap_frame_ids = [0]
         else:
-            self.new_submap_frame_ids = frame_ids[::config["mapping"]["new_submap_every"]] + [n_frames - 1]
+            self.new_submap_frame_ids = frame_ids[::config["mapping"]["new_submap_every"]] + [self.n_frames - 1]
             self.new_submap_frame_ids.pop(0)
 
         self.logger = Logger(self.output_path, config["use_wandb"])
@@ -122,6 +132,7 @@ class GaussianSLAM(object):
         self.submap_id += 1
         return gaussian_model
 
+    
     def run(self) -> None:
         """ Starts the main program flow for Gaussian-SLAM, including tracking and mapping. """
         setup_seed(self.config["seed"])
@@ -133,6 +144,42 @@ class GaussianSLAM(object):
 
             if frame_id in [0, 1]:
                 estimated_c2w = self.dataset[frame_id][-1]
+            else:
+                estimated_c2w = self.tracker.track(
+                    frame_id, gaussian_model,
+                    torch2np(self.estimated_c2ws[torch.tensor([0, frame_id - 2, frame_id - 1])]))
+            self.estimated_c2ws[frame_id] = np2torch(estimated_c2w)
+
+            # Reinitialize gaussian model for new segment
+            if self.should_start_new_submap(frame_id):
+                save_dict_to_ckpt(self.estimated_c2ws[:frame_id + 1], "estimated_c2w.ckpt", directory=self.output_path)
+                gaussian_model = self.start_new_submap(frame_id, gaussian_model)
+
+            if frame_id in self.mapping_frame_ids:
+                print("\nMapping frame", frame_id)
+                gaussian_model.training_setup(self.opt)
+                estimate_c2w = torch2np(self.estimated_c2ws[frame_id])
+                new_submap = not bool(self.keyframes_info)
+                opt_dict = self.mapper.map(frame_id, estimate_c2w, gaussian_model, new_submap)
+
+                # Keyframes info update
+                self.keyframes_info[frame_id] = {
+                    "keyframe_id": len(self.keyframes_info.keys()),
+                    "opt_dict": opt_dict
+                }
+        save_dict_to_ckpt(self.estimated_c2ws[:frame_id + 1], "estimated_c2w.ckpt", directory=self.output_path)
+    
+    def run_online(self) -> None:
+        """ Starts the main program flow for Gaussian-SLAM, including tracking and mapping. """
+        setup_seed(self.config["seed"])
+        gaussian_model = GaussianModel(0)
+        gaussian_model.training_setup(self.opt)
+        self.submap_id = 0
+
+        for frame_id in range(self.n_frames):
+
+            if frame_id in [0, 1]:
+                estimated_c2w = np.eye(4)
             else:
                 estimated_c2w = self.tracker.track(
                     frame_id, gaussian_model,
