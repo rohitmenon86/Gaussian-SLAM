@@ -106,7 +106,10 @@ if __name__ == "__main__":
 
     setup_seed(config["seed"])
     gslam = GaussianSLAM(config)
-    gslam.run()
+    if config['dataset_name'] == "realsense":
+        gslam.run_online()
+    else:
+        gslam.run()
 
     evaluator = Evaluator(gslam.output_path, gslam.output_path / "config.yaml")
     evaluator.run()
