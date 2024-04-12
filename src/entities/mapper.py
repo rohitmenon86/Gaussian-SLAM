@@ -20,6 +20,7 @@ from src.utils.mapper_utils import (calc_psnr, compute_camera_frustum_corners,
 from src.utils.utils import (get_render_settings, np2ptcloud, np2torch,
                              render_gaussian_model, torch2np)
 from src.utils.vis_utils import *  # noqa - needed for debugging
+from src.entities.datasets import CameraData
 
 
 class Mapper(object):
@@ -183,7 +184,7 @@ class Mapper(object):
             int: The number of points added to the submap
         """
         gaussian_points = gaussian_model.get_xyz()
-        camera_frustum_corners = compute_camera_frustum_corners(gt_depth, estimate_c2w, self.dataset.intrinsics)
+        camera_frustum_corners = compute_camera_frustum_corners(gt_depth, estimate_c2w, data.intrinsics)
         reused_pts_ids = compute_frustum_point_ids(
             gaussian_points, np2torch(camera_frustum_corners), device="cuda")
         new_pts_ids = compute_new_points_ids(gaussian_points[reused_pts_ids], np2torch(pts[:, :3]).contiguous(),
@@ -224,6 +225,67 @@ class Mapper(object):
         seeding_mask = self.compute_seeding_mask(gaussian_model, keyframe, is_new_submap)
         pts = self.seed_new_gaussians(
             gt_color, gt_depth, self.dataset.intrinsics, estimate_c2w, seeding_mask, is_new_submap)
+
+        filter_cloud = isinstance(self.dataset, (TUM_RGBD, ScanNet)) and not is_new_submap
+
+        new_pts_num = self.grow_submap(gt_depth, estimate_c2w, gaussian_model, pts, filter_cloud)
+
+        max_iterations = self.iterations
+        if is_new_submap:
+            max_iterations = self.new_submap_iterations
+        start_time = time.time()
+        opt_dict = self.optimize_submap([(frame_id, keyframe)] + self.keyframes, gaussian_model, max_iterations)
+        optimization_time = time.time() - start_time
+        print("Optimization time: ", optimization_time)
+
+        self.keyframes.append((frame_id, keyframe))
+
+        # Visualise the mapping for the current frame
+        with torch.no_grad():
+            render_pkg_vis = render_gaussian_model(gaussian_model, keyframe["render_settings"])
+            image_vis, depth_vis = render_pkg_vis["color"], render_pkg_vis["depth"]
+            psnr_value = calc_psnr(image_vis, keyframe["color"]).mean().item()
+            opt_dict["psnr_render"] = psnr_value
+            print(f"PSNR this frame: {psnr_value}")
+            self.logger.vis_mapping_iteration(
+                frame_id, max_iterations,
+                image_vis.clone().detach().permute(1, 2, 0),
+                depth_vis.clone().detach().permute(1, 2, 0),
+                keyframe["color"].permute(1, 2, 0),
+                keyframe["depth"].unsqueeze(-1),
+                seeding_mask=seeding_mask)
+
+        # Log the mapping numbers for the current frame
+        self.logger.log_mapping_iteration(frame_id, new_pts_num, gaussian_model.get_size(),
+                                          optimization_time/max_iterations, opt_dict)
+        return opt_dict
+    
+    def map_online(self, frame_id: int, estimate_c2w: np.ndarray, gaussian_model: GaussianModel, data, is_new_submap: bool) -> dict:
+        """ Calls out the mapping process described in paragraph 3.2
+        The process goes as follows: seed new gaussians -> add to the submap -> optimize the submap
+        Args:
+            frame_id: current keyframe id
+            estimate_c2w (np.ndarray): The estimated camera-to-world transformation matrix of shape (4x4)
+            gaussian_model (GaussianModel): The current Gaussian model of the submap
+            data: Camera data from ROS Node
+            is_new_submap (bool): A boolean flag indicating whether the current frame initiates a new submap
+        Returns:
+            opt_dict: Dictionary with statistics about the optimization process
+        """
+
+        _, gt_color, gt_depth, _ = data[frame_id]
+        estimate_w2c = np.linalg.inv(estimate_c2w)
+
+        color_transform = torchvision.transforms.ToTensor()
+        keyframe = {
+            "color": color_transform(gt_color).cuda(),
+            "depth": np2torch(gt_depth, device="cuda"),
+            "render_settings": get_render_settings(
+                data.width, data.height, data.intrinsics, estimate_w2c)}
+
+        seeding_mask = self.compute_seeding_mask(gaussian_model, keyframe, is_new_submap)
+        pts = self.seed_new_gaussians(
+            gt_color, gt_depth, data.intrinsics, estimate_c2w, seeding_mask, is_new_submap)
 
         filter_cloud = isinstance(self.dataset, (TUM_RGBD, ScanNet)) and not is_new_submap
 
