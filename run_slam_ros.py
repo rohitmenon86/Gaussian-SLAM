@@ -133,7 +133,7 @@ class GaussianSlamROSNode():
 def main(args):
     rospy.init_node('gaussian_slam_ros')
     rospack = rospkg.RosPack()
-    gslam_path = rospack.get_path('yolo_segmentation_ros')
+    gslam_path = rospack.get_path('gaussian_slam_ros')
     config_path = rospy.get_param("config_path", "configs/ros/realsense_ros.yaml")
     full_config_path = gslam_path + config_path
     config = load_config(full_config_path)
