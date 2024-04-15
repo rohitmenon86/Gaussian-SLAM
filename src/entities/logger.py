@@ -6,7 +6,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 import wandb
-
+import rospy
+from sensor_msgs.msg import Image
 
 class Logger(object):
 
@@ -16,6 +17,12 @@ class Logger(object):
         self.output_path = Path("/home/rohit/workspace/ros1/gsplat_ws/src/gaussian_slam/output/ros_live/scene0")
         (self.output_path / "mapping_vis").mkdir(exist_ok=True, parents=True)
         self.use_wandb = use_wandb
+
+        self.rendered_rgb_pub = rospy.Publisher("~rendered_rgb", Image, queue_size=1)
+        self.rendered_depth_pub = rospy.Publisher("~rendered_depth", Image, queue_size=1)
+        self.residual_rgb_pub = rospy.Publisher("~residual_rgb", Image, queue_size=1)
+        self.residual_depth_pub = rospy.Publisher("~residual_depth", Image, queue_size=1)
+        self.densification_pub  = rospy.Publisher("~densification", Image, queue_size=1)
 
     def log_tracking_iteration(self, frame_id, cur_pose, gt_quat, gt_trans, total_loss,
                                color_loss, depth_loss, iter, num_iters,
@@ -77,6 +84,36 @@ class Logger(object):
                        "Mapping/color_loss": opt_dict[frame_id]["color_loss"],
                        "Mapping/depth_loss": opt_dict[frame_id]["depth_loss"]})
 
+    def numpy_to_image_msg(self, np_array):
+        image_msg = Image()
+        image_msg.height = np_array.shape[0]
+        image_msg.width = np_array.shape[1]
+        if np_array.ndim == 3 and (np_array.dtype == np.float32 or np_array.dtype == np.float64):
+            np_array = (np_array * 255).astype(np.uint8)
+        image_msg.encoding = 'rgb8' if np_array.ndim == 3 else '32FC1'
+        image_msg.step = np_array.shape[1] * np_array.shape[2] if np_array.ndim == 3 else np_array.shape[1]
+        image_msg.data = np_array.tobytes()
+
+        # Set header fields if necessary
+        image_msg.header.stamp = rospy.Time.now()
+        image_msg.header.frame_id = "camera_color_optical_frame"
+
+        return image_msg
+    
+    def publish_np_array(self, np_array, ros_pub):
+        if np_array is None:
+            return
+        msg = self.numpy_to_image_msg(np_array)
+        ros_pub.publish(msg)
+    
+    def publish_to_ros_topics(self, color, depth, color_residual, depth_residual, seeding_mask):
+
+        self.publish_np_array(color, self.rendered_rgb_pub)
+        self.publish_np_array(depth, self.rendered_depth_pub)
+        self.publish_np_array(color_residual, self.residual_rgb_pub)
+        self.publish_np_array(depth_residual, self.residual_depth_pub)
+        self.publish_np_array(seeding_mask, self.densification_pub)
+
     def vis_mapping_iteration(self, frame_id, iter, color, depth, gt_color, gt_depth, seeding_mask=None) -> None:
         """
         Visualization of depth, color images and save to file.
@@ -94,6 +131,7 @@ class Logger(object):
         depth_np = depth.detach().cpu().numpy()
         color = torch.round(color * 255.0) / 255.0
         color_np = color.detach().cpu().numpy()
+        print("Depth image dim: ", np.shape(depth_np))
         depth_residual = np.abs(gt_depth_np - depth_np)
         depth_residual[gt_depth_np == 0.0] = 0.0
         # make errors >=5cm noticeable
@@ -143,6 +181,7 @@ class Logger(object):
             axs[1, 2].set_xticks([])
             axs[1, 2].set_yticks([])
 
+        self.publish_to_ros_topics(color_np, depth_np, color_residual, depth_residual, seeding_mask)
         for ax in axs.flatten():
             ax.axis('off')
         fig.tight_layout()
