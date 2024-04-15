@@ -8,6 +8,32 @@ import numpy as np
 import torch
 import json
 import imageio
+from collections import deque
+
+class CameraData():
+    def __init__(self, rgb_intrinsics, height, width) -> None:
+        self.intrinsics = rgb_intrinsics
+        self.height = height
+        self.width  = width
+        self.rgb_array = None
+        self.depth_array = None
+        self.c2w = None
+        self.timestamp = None
+        self.pose = np.eye(4)
+
+        self.rgb_images = deque(maxlen=3)
+        self.depth_images = deque(maxlen=3)
+        self.c2ws = deque(maxlen=3)
+        self.timestamps = deque(maxlen=3)
+    def set_data(self, rgb, depth, c2w, timestamp):
+        self.rgb_array = rgb
+        self.depth_array = depth
+        self.c2w = c2w
+        self.timestamp = timestamp
+        self.pose = np.eye(4)
+    
+    def __getitem__(self, index):
+        return index, self.rgb_array, self.depth_array, self.c2w
 
 class BaseDataset(torch.utils.data.Dataset):
 

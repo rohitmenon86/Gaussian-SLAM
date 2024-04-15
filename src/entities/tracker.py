@@ -20,10 +20,10 @@ from src.utils.tracker_utils import (compute_camera_opt_params,
 from src.utils.utils import (get_render_settings, np2torch,
                              render_gaussian_model, torch2np)
 
-from src.entities.datasets import CameraData
+from src.entities.base_dataset import CameraData
 
 class Tracker(object):
-    def __init__(self, config: dict, dataset: BaseDataset, logger: Logger) -> None:
+    def __init__(self, config: dict, dataset: BaseDataset, logger: Logger, camera_data= None) -> None:
         """ Initializes the Tracker with a given configuration, dataset, and logger.
         Args:
             config: Configuration dictionary specifying hyperparameters and operational settings.
@@ -33,6 +33,7 @@ class Tracker(object):
         self.dataset = dataset
         self.logger = logger
         self.config = config
+        self.camera_data = camera_data
         self.filter_alpha = self.config["filter_alpha"]
         self.filter_outlier_depth = self.config["filter_outlier_depth"]
         self.alpha_thre = self.config["alpha_thre"]
@@ -46,7 +47,10 @@ class Tracker(object):
         self.odometry_type = self.config["odometry_type"]
         self.help_camera_initialization = self.config["help_camera_initialization"]
         self.init_err_ratio = self.config["init_err_ratio"]
-        self.odometer = VisualOdometer(self.dataset.intrinsics, self.config["odometer_method"])
+        if self.config["ros_stream"] == True:
+            self.odometer = VisualOdometer(self.camera_data.intrinsics, self.config["odometer_method"])
+        else: 
+            self.odometer = VisualOdometer(self.dataset.intrinsics, self.config["odometer_method"])
 
     def compute_losses(self, gaussian_model: GaussianModel, render_settings: dict,
                        opt_cam_rot: torch.Tensor, opt_cam_trans: torch.Tensor,
@@ -68,6 +72,7 @@ class Tracker(object):
         rel_transform[:3, 3] = opt_cam_trans
 
         pts = gaussian_model.get_xyz()
+        #print(np.shape(pts))
         pts_ones = torch.ones(pts.shape[0], 1).cuda().float()
         pts4 = torch.cat((pts, pts_ones), dim=1)
         transformed_pts = (rel_transform @ pts4.T).T[:, :3]
@@ -136,7 +141,11 @@ class Tracker(object):
         init_rel = init_c2w @ np.linalg.inv(last_c2w)
         init_rel_w2c = np.linalg.inv(init_rel)
         reference_w2c = last_w2c
-        render_settings = get_render_settings(
+        if self.config["ros_stream"] == True:
+            render_settings = get_render_settings(
+            self.camera_data.width, self.camera_data.height, self.camera_data.intrinsics, reference_w2c)
+        else:
+            render_settings = get_render_settings(
             self.dataset.width, self.dataset.height, self.dataset.intrinsics, reference_w2c)
         opt_cam_rot, opt_cam_trans = compute_camera_opt_params(init_rel_w2c)
         gaussian_model.training_setup_camera(opt_cam_rot, opt_cam_trans, self.config)
@@ -226,7 +235,7 @@ class Tracker(object):
         Returns:
             The updated camera-to-world transformation matrix for the current frame.
         """
-        _, image, depth, gt_c2w = self.dataset[frame_id]
+        _, image, depth, gt_c2w = data[frame_id]
 
         if (self.help_camera_initialization or self.odometry_type == "odometer") and self.odometer.last_rgbd is None:
             _, last_image, last_depth, _ = self.dataset[frame_id - 1]

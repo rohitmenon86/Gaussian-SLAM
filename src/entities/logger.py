@@ -12,6 +12,8 @@ class Logger(object):
 
     def __init__(self, output_path: Union[Path, str], use_wandb=False) -> None:
         self.output_path = Path(output_path)
+        print("Output path", self.output_path)
+        self.output_path = Path("/home/rohit/workspace/ros1/gsplat_ws/src/gaussian_slam/output/ros_live/scene0")
         (self.output_path / "mapping_vis").mkdir(exist_ok=True, parents=True)
         self.use_wandb = use_wandb
 
@@ -154,4 +156,5 @@ class Logger(object):
         if self.use_wandb:
             log_title = "Mapping_vis/" + f'{frame_id:04d}_{iter:04d}'
             wandb.log({log_title: [wandb.Image(fig_name)]})
+        print("Output path: ", self.output_path)
         print(f"Saved rendering vis of color/depth at {frame_id:04d}_{iter:04d}.jpg")

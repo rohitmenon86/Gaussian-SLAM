@@ -1,0 +1,13 @@
+<?xml version="1.0"?>
+<launch>
+
+    <!-- User Python Env -->
+    <!-- <arg name="yolo_segmentation_ros_python" value=""/> -->
+
+    <!-- Virtual Python Env -->
+    <arg name="gaussian_slam_python" value="/home/rohit/workspace/software/anaconda3/envs/gslam/bin/python"/>
+
+    <node name="gaussian_slam_ros_node" pkg="gaussian_slam_ros" type="run_slam_ros.py" launch-prefix="$(arg gaussian_slam_python)" output="screen">
+    </node>
+
+</launch>

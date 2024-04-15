@@ -1,14 +1,16 @@
 project_name: "Gaussian_SLAM_ros_realsense"
-dataset_name: "ros_realsense"
+ros_stream: True
+dataset_name: "ros_live"
 checkpoint_path: null
 use_wandb: False
 frame_limit: -1 # for debugging, set to -1 to disable
 seed: 0
 data:
   scene_name: scene0
-  input_path: data/ros_realsense/scene0/
-  output_path: output/ros_realsense/scene0/ 
+  input_path: data/ros_live/scene0/
+  output_path: output/ros_live/scene0/ 
 mapping:
+  ros_stream: True
   new_submap_every: 50
   map_every: 1
   iterations: 100
@@ -21,7 +23,17 @@ mapping:
   alpha_thre: 0.6
   pruning_thre: 0.5
   submap_using_motion_heuristic: True
+camera: 
+  manip_cam:
+    rgb_topic: '/camera/color/image_raw'
+    depth_topic: '/camera/aligned_depth_to_color/image_raw'
+    rgb_info_topic: '/camera/color/camera_info'
+    depth_info_topic: '/camera/aligned_depth_to_color/camera_info'
+    ref_frame: 'world'
+    camera_frame: 'camera_color_optical_frame'
+
 tracking:
+  ros_stream: True
   gt_camera: False
   w_color_loss: 0.6
   iterations: 200
@@ -37,11 +49,11 @@ tracking:
   soft_alpha: True
   mask_invalid_depth: True
 cam: 
-  H: 480 
+  H: 360 
   W: 640
-  fx: 577.590698
-  fy: 578.729797
-  cx: 318.905426
-  cy: 242.683609
+  fx: 453.10504150390625
+  fy: 452.6966857910156
+  cx: 318.85125732421875
+  cy: 180.7555694580078
   depth_scale: 1000.
   crop_edge: 12

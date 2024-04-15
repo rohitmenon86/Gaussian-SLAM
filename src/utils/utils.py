@@ -1,11 +1,11 @@
 import os
 import random
+import math
 
 import numpy as np
 import open3d as o3d
 import torch
 from gaussian_rasterizer import GaussianRasterizationSettings, GaussianRasterizer
-
 
 def setup_seed(seed: int) -> None:
     """ Sets the seed for generating random numbers to ensure reproducibility across multiple runs.
@@ -87,6 +87,7 @@ def get_render_settings(w, h, intrinsics, w2c, near=0.01, far=100, sh_degree=0):
     Returns:
         GaussianRasterizationSettings: Configured settings for Gaussian rasterization.
     """
+    print("Intrinsics", intrinsics)
     fx, fy, cx, cy = intrinsics[0, 0], intrinsics[1,
                                                   1], intrinsics[0, 2], intrinsics[1, 2]
     w2c = torch.tensor(w2c).cuda().float()
@@ -147,6 +148,7 @@ def render_gaussian_model(gaussian_model, render_settings,
 
     if override_means_3d is None:
         means3D = gaussian_model.get_xyz()
+        #print(np.shape(means3D))
     else:
         means3D = override_means_3d
 

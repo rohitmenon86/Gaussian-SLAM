@@ -10,6 +10,7 @@ from pathlib import Path
 import numpy as np
 import torch
 
+from src.entities.base_dataset import CameraData
 from src.entities.arguments import OptimizationParams
 from src.entities.datasets import get_dataset
 from src.entities.gaussian_model import GaussianModel
@@ -27,11 +28,12 @@ import rospy
 
 class GaussianSLAMROS(object):
 
-    def __init__(self, config: dict) -> None:
+    def __init__(self, config: dict, camera_data:CameraData) -> None:
 
         self._setup_output_path(config)
         self.device = "cuda"
         self.config = config
+        self.camera_data = camera_data
 
         self.scene_name = config["data"]["scene_name"]
         self.dataset_name = config["dataset_name"]
@@ -61,13 +63,19 @@ class GaussianSLAMROS(object):
             self.new_submap_frame_ids.pop(0)
 
         self.logger = Logger(self.output_path, config["use_wandb"])
-        self.mapper = Mapper(config["mapping"], self.dataset, self.logger)
-        self.tracker = Tracker(config["tracking"], self.dataset, self.logger)
+        self.mapper = Mapper(config["mapping"], self.dataset, self.logger, self.camera_data)
+        self.tracker = Tracker(config["tracking"], self.dataset, self.logger, self.camera_data)
 
         print('Tracking config')
         pprint.PrettyPrinter().pprint(config["tracking"])
         print('Mapping config')
         pprint.PrettyPrinter().pprint(config["mapping"])
+
+        setup_seed(self.config["seed"])
+        self.gaussian_model = GaussianModel(0)
+        self.gaussian_model.training_setup(self.opt)
+        self.submap_id = 0
+
 
     def _setup_output_path(self, config: dict) -> None:
         """ Sets up the output path for saving results based on the provided configuration. If the output path is not
@@ -92,6 +100,7 @@ class GaussianSLAMROS(object):
         Returns:
             A boolean indicating whether to start a new submap.
         """
+        #return True
         if self.submap_using_motion_heuristic:
             if exceeds_motion_thresholds(
                 self.estimated_c2ws[frame_id], self.estimated_c2ws[self.new_submap_frame_ids[-1]],
@@ -131,16 +140,13 @@ class GaussianSLAMROS(object):
 
     def process(self, data) -> None:
         """ Starts the main program flow for Gaussian-SLAM, including tracking and mapping. """
-        setup_seed(self.config["seed"])
-        gaussian_model = GaussianModel(0)
-        gaussian_model.training_setup(self.opt)
-        self.submap_id = 0
-
+        rospy.loginfo("Processing camera data")
+        
         if self.frame_id in [0, 1]:
             estimated_c2w = data.pose
         else:
             estimated_c2w = self.tracker.track_online(
-                self.frame_id, gaussian_model,
+                self.frame_id, self.gaussian_model,
                 data,
                 torch2np(self.estimated_c2ws[torch.tensor([0, self.frame_id - 2, self.frame_id - 1])]))
         self.estimated_c2ws[self.frame_id] = np2torch(estimated_c2w)
@@ -148,14 +154,14 @@ class GaussianSLAMROS(object):
         # Reinitialize gaussian model for new segment
         if self.should_start_new_submap(self.frame_id):
             save_dict_to_ckpt(self.estimated_c2ws[:self.frame_id + 1], "estimated_c2w.ckpt", directory=self.output_path)
-            gaussian_model = self.start_new_submap(self.frame_id, gaussian_model)
+            self.gaussian_model = self.start_new_submap(self.frame_id, self.gaussian_model)
 
         if self.frame_id in self.mapping_frame_ids:
             print("\nMapping frame", self.frame_id)
-            gaussian_model.training_setup(self.opt)
+            self.gaussian_model.training_setup(self.opt)
             estimate_c2w = torch2np(self.estimated_c2ws[self.frame_id])
             new_submap = not bool(self.keyframes_info)
-            opt_dict = self.mapper.map_online(self.frame_id, estimate_c2w, gaussian_model, data, new_submap)
+            opt_dict = self.mapper.map_online(self.frame_id, estimate_c2w, self.gaussian_model, data, new_submap)
 
             # Keyframes info update
             self.keyframes_info[self.frame_id] = {

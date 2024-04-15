@@ -20,11 +20,11 @@ from src.utils.mapper_utils import (calc_psnr, compute_camera_frustum_corners,
 from src.utils.utils import (get_render_settings, np2ptcloud, np2torch,
                              render_gaussian_model, torch2np)
 from src.utils.vis_utils import *  # noqa - needed for debugging
-from src.entities.datasets import CameraData
+from src.entities.base_dataset import CameraData
 
 
 class Mapper(object):
-    def __init__(self, config: dict, dataset: BaseDataset, logger: Logger) -> None:
+    def __init__(self, config: dict, dataset: BaseDataset, logger: Logger, camera_data = None) -> None:
         """ Sets up the mapper parameters
         Args:
             config: configuration of the mapper
@@ -34,6 +34,7 @@ class Mapper(object):
         self.config = config
         self.logger = logger
         self.dataset = dataset
+        self.camera_data = camera_data
         self.iterations = config["iterations"]
         self.new_submap_iterations = config["new_submap_iterations"]
         self.new_submap_points_num = config["new_submap_points_num"]
@@ -62,6 +63,7 @@ class Mapper(object):
             color_for_mask = (torch2np(keyframe["color"].permute(1, 2, 0)) * 255).astype(np.uint8)
             seeding_mask = geometric_edge_mask(color_for_mask, RGB=True)
         else:
+            print(keyframe["render_settings"])
             render_dict = render_gaussian_model(gaussian_model, keyframe["render_settings"])
             alpha_mask = (render_dict["alpha"] < self.alpha_thre)
             gt_depth_tensor = keyframe["depth"][None]
@@ -184,7 +186,10 @@ class Mapper(object):
             int: The number of points added to the submap
         """
         gaussian_points = gaussian_model.get_xyz()
-        camera_frustum_corners = compute_camera_frustum_corners(gt_depth, estimate_c2w, data.intrinsics)
+        if self.config["ros_stream"] == True:
+            camera_frustum_corners = compute_camera_frustum_corners(gt_depth, estimate_c2w, self.camera_data.intrinsics)
+        else:
+            camera_frustum_corners = compute_camera_frustum_corners(gt_depth, estimate_c2w, self.dataset.intrinsics)
         reused_pts_ids = compute_frustum_point_ids(
             gaussian_points, np2torch(camera_frustum_corners), device="cuda")
         new_pts_ids = compute_new_points_ids(gaussian_points[reused_pts_ids], np2torch(pts[:, :3]).contiguous(),
@@ -260,7 +265,7 @@ class Mapper(object):
                                           optimization_time/max_iterations, opt_dict)
         return opt_dict
     
-    def map_online(self, frame_id: int, estimate_c2w: np.ndarray, gaussian_model: GaussianModel, data, is_new_submap: bool) -> dict:
+    def map_online(self, frame_id: int, estimate_c2w: np.ndarray, gaussian_model: GaussianModel, data: CameraData, is_new_submap: bool) -> dict:
         """ Calls out the mapping process described in paragraph 3.2
         The process goes as follows: seed new gaussians -> add to the submap -> optimize the submap
         Args:
@@ -282,7 +287,7 @@ class Mapper(object):
             "depth": np2torch(gt_depth, device="cuda"),
             "render_settings": get_render_settings(
                 data.width, data.height, data.intrinsics, estimate_w2c)}
-
+        
         seeding_mask = self.compute_seeding_mask(gaussian_model, keyframe, is_new_submap)
         pts = self.seed_new_gaussians(
             gt_color, gt_depth, data.intrinsics, estimate_c2w, seeding_mask, is_new_submap)

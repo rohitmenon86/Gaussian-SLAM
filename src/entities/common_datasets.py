@@ -9,8 +9,7 @@ import torch
 import json
 import imageio
 
-import base_dataset
-from base_dataset import  BaseDataset
+from src.entities.base_dataset import CameraData, BaseDataset
 
 try:
     import pyrealsense2
@@ -330,3 +329,10 @@ class RealSenseLive(BaseDataset):
         
         self.previous_frame_time = current_frame_time
         return index, image, depth, pose
+
+class ROSDatasetLive(BaseDataset):
+    def __init__(self, dataset_config: dict):
+        super().__init__(dataset_config)
+
+    def __getitem__(self, index):
+        return index, None, None, None

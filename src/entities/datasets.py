@@ -9,34 +9,9 @@ import torch
 import json
 import imageio
 
-import base_dataset
-import common_datasets
-from common_datasets import Replica, TUM_RGBD, ScanNet, ScanNetPP, RealSenseLive
+from src.entities.base_dataset import CameraData, BaseDataset
+from src.entities.common_datasets import Replica, TUM_RGBD, ScanNet, ScanNetPP, RealSenseLive, ROSDatasetLive
 from collections import deque
-
-class CameraData():
-    def __init__(self, rgb_intrinsics, height, width) -> None:
-        self.intrinsics = rgb_intrinsics
-        self.height = height
-        self.width  = width
-        self.rgb_array = None
-        self.depth_array = None
-        self.c2w = None
-        self.timestamp = None
-
-        self.rgb_images = deque(maxlen=3)
-        self.depth_images = deque(maxlen=3)
-        self.c2ws = deque(maxlen=3)
-        self.timestamps = deque(maxlen=3)
-    def set_data(self, rgb, depth, c2w, timestamp):
-        self.rgb_array = rgb
-        self.depth_array = depth
-        self.c2w = c2w
-        self.timestamp = timestamp
-    
-    def __getitem__(self, index):
-        return index, self.rgb_array, self.depth_array, self.c2w
-
 
 def get_dataset(dataset_name: str):
     if dataset_name == "replica":
@@ -49,6 +24,6 @@ def get_dataset(dataset_name: str):
         return ScanNetPP
     elif dataset_name == "realsense":
         return RealSenseLive
-    elif dataset_name == "ros":
-        return ROS
+    elif dataset_name == "ros_live":
+        return ROSDatasetLive
     raise NotImplementedError(f"Dataset {dataset_name} not implemented")
