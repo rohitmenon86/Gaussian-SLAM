@@ -168,4 +168,10 @@ class GaussianSLAMROS(object):
                 "keyframe_id": len(self.keyframes_info.keys()),
                 "opt_dict": opt_dict
             }
+            print(self.keyframes_info[self.frame_id])
         self.frame_id = self.frame_id + 1
+
+    def save_ckpt(self):
+        self.output_path = Path("/home/rohit/workspace/ros1/gsplat_ws/src/gaussian_slam/output/ros_live/scene0")
+        print("Save ckpt Output path", str(self.output_path))
+        save_dict_to_ckpt(self.estimated_c2ws[:self.frame_id + 1], "estimated_c2w.ckpt", directory=self.output_path)
