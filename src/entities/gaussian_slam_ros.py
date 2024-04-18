@@ -48,7 +48,7 @@ class GaussianSLAMROS(object):
         self.mapping_frame_ids = frame_ids[::config["mapping"]["map_every"]] + [self.n_frames - 1]
         self.frame_id = 0
 
-
+        self.output_path = Path("/home/rohit/workspace/ros1/gsplat_ws/src/gaussian_slam/output/ros_live/scene0/")
         save_dict_to_yaml(config, "config.yaml", directory=self.output_path)
 
         self.submap_using_motion_heuristic = config["mapping"]["submap_using_motion_heuristic"]
@@ -162,6 +162,7 @@ class GaussianSLAMROS(object):
             estimate_c2w = torch2np(self.estimated_c2ws[self.frame_id])
             new_submap = not bool(self.keyframes_info)
             opt_dict = self.mapper.map_online(self.frame_id, estimate_c2w, self.gaussian_model, data, new_submap)
+            self.dataset.append_data(self.frame_id, data.rgb_array, data.depth_array, data.pose)
 
             # Keyframes info update
             self.keyframes_info[self.frame_id] = {
@@ -171,7 +172,8 @@ class GaussianSLAMROS(object):
             print(self.keyframes_info[self.frame_id])
         self.frame_id = self.frame_id + 1
 
-    def save_ckpt(self):
+    def save_dataset_and_ckpt(self):
         self.output_path = Path("/home/rohit/workspace/ros1/gsplat_ws/src/gaussian_slam/output/ros_live/scene0")
         print("Save ckpt Output path", str(self.output_path))
         save_dict_to_ckpt(self.estimated_c2ws[:self.frame_id + 1], "estimated_c2w.ckpt", directory=self.output_path)
+        self.dataset.save_data()

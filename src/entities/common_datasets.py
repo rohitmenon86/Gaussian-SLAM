@@ -333,6 +333,48 @@ class RealSenseLive(BaseDataset):
 class ROSDatasetLive(BaseDataset):
     def __init__(self, dataset_config: dict):
         super().__init__(dataset_config)
+        self.recorded_data = {}
+        self.poses = []
+        self.filename = "/home/rohit/workspace/ros1/gsplat_ws/src/gaussian_slam/output/ros_live/scene0/ros_dataset.npz"
+        if os.path.exists(self.filename):
+            self.load_data()
+            self.data_saved = True
+        
 
-    def __getitem__(self, index):
-        return index, None, None, None
+    def append_data(self, frame_id, rgb_array, depth_array, pose):
+        if frame_id in self.recorded_data:
+            raise ValueError("Frame ID already exists in the dataset")
+        self.recorded_data[frame_id] = {
+            'frame_id': frame_id,
+            'rgb': rgb_array,
+            'depth': depth_array,
+            'pose': pose
+        }
+
+    def load_data(self):
+        with np.load(self.filename, allow_pickle=True) as data:
+            for key in data.files:
+                frame_data = data[key].item() 
+                self.recorded_data[int(key)] = frame_data  # Assuming frame_id can be converted to int safely
+                # Assuming 'pose' is a key in the dictionary for each frame's data
+                if 'pose' in frame_data:
+                    self.poses.append(frame_data['pose'])
+                else:
+                    self.poses.append(None)  # Append None or suitable default if no pose data
+
+    def save_data(self):
+        data_with_str_keys = {str(k): v for k, v in self.recorded_data.items()}
+        np.savez(self.filename, **data_with_str_keys)
+        self.data_saved = True
+
+    def __getitem__(self, frame_id):
+        if frame_id in self.recorded_data:
+            return self.recorded_data[frame_id]
+        else:
+            raise KeyError("Frame ID not found in the dataset")
+
+    def __len__(self):
+        return len(self.recorded_data)
+
+    def __repr__(self):
+        return f"<ImageDataset with {len(self.recorded_data)} entries>"

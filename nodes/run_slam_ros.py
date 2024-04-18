@@ -36,7 +36,7 @@ from geometry_msgs.msg import TransformStamped
 from cv_bridge import CvBridge, CvBridgeError
 from std_msgs.msg import String, Header
 from sensor_msgs.msg import Image, CameraInfo
-from gaussian_slam_msgs.msg import StartAction, PauseAction, ResumeAction, StopAction, EvaluateAction
+from gaussian_slam_msgs.msg import StartAction, PauseAction, ResumeAction, StopAction, EvaluateAction, EvaluateResult
 from threading import Lock
 import tf.transformations as transformations
 import numpy as np
@@ -54,7 +54,7 @@ class GaussianSlamROSNode():
         
         self.pause_server  = actionlib.SimpleActionServer('~pause', PauseAction, self.pause_cb, False)
         self.resume_server = actionlib.SimpleActionServer('~resume', ResumeAction, self.resume_cb, False)
-        #self.evaluate_server = actionlib.SimpleActionServer('evaluate', Evaluate, self.evaluate, False)
+        self.evaluate_server = actionlib.SimpleActionServer('~evaluate', EvaluateAction, self.evaluate_cb, False)
 
 
         self.data = CameraData(self.camera.intrinsics, self.camera.image_height, self.camera.image_width)
@@ -65,7 +65,7 @@ class GaussianSlamROSNode():
         self.pause_server.start()
         self.resume_server.start()
         self.stop_server.start()
-        #self.evaluate_server.start()
+        self.evaluate_server.start()
         
     def update_camera_data(self):
         self.data.set_data(*self.camera.get_latest_data())
@@ -109,7 +109,7 @@ class GaussianSlamROSNode():
     def stop_cb(self, goal):
         self.is_stopped = True
         # Save the data to a file before shutting down the timer
-        self.gslam.save_ckpt()
+        self.gslam.save_dataset_and_ckpt()
         
         # Shutdown the timer after saving the data
         # if self.timer is not None:
@@ -117,6 +117,22 @@ class GaussianSlamROSNode():
         #     self.timer = None
         
         self.stop_server.set_succeeded()
+
+    def evaluate_cb(self, goal):
+        self.is_stopped = True
+        # Save the data to a file before shutting down the timer
+        self.gslam.save_dataset_and_ckpt()
+
+        if self.evaluate_server.is_preempt_requested():
+            self.evaluate_server.set_preempted()
+        else:
+            # Proceed with evaluating the data
+            result = EvaluateResult()
+            self.evaluator = Evaluator(self.gslam.output_path, self.gslam.output_path / "config.yaml")
+            self.evaluator.run()
+            result.evaluation = "Data evaluated successfully with {} data points.".format(len(self.dataset))
+            self.evaluate_server.set_succeeded(result)
+            rospy.loginfo("Evaluation completed.")
 
 def main(args):
     rospy.init_node('gaussian_slam_ros')
