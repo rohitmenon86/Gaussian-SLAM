@@ -406,3 +406,11 @@ class GaussianModel:
         self.xyz_gradient_accum[update_filter] += torch.norm(
             viewspace_point_tensor.grad[update_filter, :2], dim=-1, keepdim=True)
         self.denom[update_filter] += 1
+
+    def print_gaussian_model_params(self):
+        params_dict = self.capture_dict()
+        for key, value in params_dict.items():
+            if hasattr(value, 'numpy'):  # Check if it's a tensor
+                print(f"{key}: {np.array(value)}")  # Convert to numpy array and print
+            else:
+                print(f"{key}: {value}")

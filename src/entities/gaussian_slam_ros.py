@@ -171,6 +171,8 @@ class GaussianSLAMROS(object):
             }
             print(self.keyframes_info[self.frame_id])
         self.frame_id = self.frame_id + 1
+        #print("GS Model params \n")
+        #self.gaussian_model.print_gaussian_model_params()
 
     def save_dataset_and_ckpt(self):
         self.output_path = Path("/home/rohit/workspace/ros1/gsplat_ws/src/gaussian_slam/output/ros_live/scene0")
