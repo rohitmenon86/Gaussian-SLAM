@@ -88,7 +88,7 @@ class Camera():
         try:
             # Try to get the transform when the images arrive
             camera_transform = self.tf_buffer.lookup_transform(
-                'world', 'camera_color_optical_frame', rospy.Time(0), rospy.Duration(1.0))
+                'odom', 'wrist_camera_color_optical_frame', rospy.Time(0), rospy.Duration(1.0))
             with self.lock:
                 if rgb_image != None and depth_image != None:
                     self.rgb_image = rgb_image
@@ -109,25 +109,31 @@ class Camera():
     
     def convert_rgb_image_to_nparray(self, msg):
          # Assume the image is in RGB8 format
-        if msg.encoding == 'rgb8':
+        if msg.encoding == 'rgb8'or msg.encoding == 'bgr8':
             dtype = np.uint8
             n_channels = 3
+             # Convert the byte array to a numpy array
+            image_np = np.frombuffer(msg.data, dtype=dtype)
+            # Reshape the numpy array using the dimensions of the image
+            image_np = image_np.reshape(msg.height, msg.width, n_channels)
+
+            # If the image encoding is 'bgr8', swap the channels to make it RGB
+            if msg.encoding == 'bgr8':
+                    image_np = image_np[:, :, ::-1].copy()  # Make a copy to ensure the array has positive strides
+            return image_np
         else:
             rospy.logerr('Unsupported encoding: {}'.format(msg.encoding))
             return None
         
-        # Convert the byte array to a numpy array
-        image_np = np.frombuffer(msg.data, dtype=dtype)
-        # Reshape the numpy array using the dimensions of the image
-        image_np = image_np.reshape(msg.height, msg.width, n_channels)
-        return image_np
-
+       
     def convert_depth_image_to_nparray(self, msg):
          # Check the encoding and set dtype and conversion factor accordingly
+        nan_value = 10
         if msg.encoding == '16UC1':
             # 16-bit image -> depths are in millimeters
             dtype = np.uint16
             conversion_factor = 0.001  # from millimeters to meters (if needed)
+            nan_value = 1.0*nan_value/conversion_factor
         elif msg.encoding == '32FC1':
             # 32-bit floating point image -> depths are in meters
             dtype = np.float32
@@ -140,6 +146,7 @@ class Camera():
         depth_array = np.frombuffer(msg.data, dtype=dtype)
         # Reshape the numpy array using the dimensions of the image
         depth_array = depth_array.reshape(msg.height, msg.width)
+        depth_array = self.replace_nan_with_value(depth_array, nan_value)
         # Apply conversion factor if needed (e.g., converting mm to meters for consistency)
         depth_array = depth_array * conversion_factor
 
@@ -173,3 +180,19 @@ class Camera():
         with self.lock:
             got_data = self.got_data
         return got_data
+    
+    def replace_nan_with_value(self, depth_image, value=0):
+        """
+        Replace NaN values in a numpy array (depth image) with a specified value.
+
+        Parameters:
+            depth_image (np.array): Input depth image as a numpy array where NaNs are present.
+            value (float): The value to replace NaNs with.
+
+        Returns:
+            np.array: A new depth image array with NaNs replaced.
+        """
+        if np.isnan(depth_image).any():
+            # Replace NaNs with the specified value
+            depth_image = np.nan_to_num(depth_image, nan=value)
+        return depth_image
