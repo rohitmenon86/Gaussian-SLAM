@@ -325,3 +325,32 @@ class Mapper(object):
         self.logger.log_mapping_iteration(frame_id, new_pts_num, gaussian_model.get_size(),
                                           optimization_time/max_iterations, opt_dict)
         return opt_dict
+    
+    def render_online(self, estimate_c2w: np.ndarray, gaussian_model: GaussianModel, data: CameraData) -> dict:
+        """
+        Renders a visual representation of a frame using a Gaussian model and specific camera pose.
+        Args:
+            estimate_c2w (np.ndarray): Camera-to-world transformation matrix.
+            gaussian_model (GaussianModel): The Gaussian model used for rendering the scene.
+            data (CameraData): Contains camera data such as dimensions and intrinsic parameters.
+
+        Returns:
+            dict: A dictionary containing the RGB and depth images of the rendered frame.
+        """
+
+        estimate_w2c = np.linalg.inv(estimate_c2w)
+        keyframe = {
+            "render_settings": get_render_settings(
+                data.width, data.height, data.intrinsics, estimate_w2c)}
+        # Visualise the mapping for the current frame
+        with torch.no_grad():
+            render_pkg_vis = render_gaussian_model(gaussian_model, keyframe["render_settings"])
+            image_vis, depth_vis = render_pkg_vis["color"], render_pkg_vis["depth"]
+
+            rgb_frame = image_vis.clone().detach().permute(1, 2, 0)
+            depth_frame = depth_vis.clone().detach().permute(1, 2, 0)
+
+            # Create a dictionary with the RGB and depth frames
+            frames = {'rgb': rgb_frame, 'depth': depth_frame}
+
+            return frames

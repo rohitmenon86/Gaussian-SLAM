@@ -197,3 +197,53 @@ class Logger(object):
             wandb.log({log_title: [wandb.Image(fig_name)]})
         print("Output path: ", self.output_path)
         print(f"Saved rendering vis of color/depth at {frame_id:04d}_{iter:04d}.jpg")
+
+    def vis_rendering(self, color, depth, frame_data=None, seeding_mask=None) -> None:
+        """
+        Visualization of depth, color images and save to file.
+
+        Args:
+            frame_data (int): current frame index.
+            iter (int): the iteration number.
+            save_rendered_image (bool): whether to save the rgb image in separate folder
+            img_dir (str): the directory to save the visualization.
+            seeding_mask: used in mapper when adding gaussians, if not none.
+        """
+        depth_np = depth.detach().cpu().numpy()
+        color = torch.round(color * 255.0) / 255.0
+        color_np = color.detach().cpu().numpy()
+        print("Depth image dim: ", np.shape(depth_np))
+                # make errors >=5cm noticeable
+        depth_residual = np.clip(depth_residual, 0.0, 0.05)
+
+        
+        # Determine Aspect Ratio and Figure Size
+        aspect_ratio = color.shape[1] / color.shape[0]
+        fig_height = 8
+        # Adjust the multiplier as needed for better spacing
+        fig_width = fig_height * aspect_ratio * 1.2
+
+        fig, axs = plt.subplots(2, 1, figsize=(fig_width, fig_height))
+        axs[0, 0].imshow(depth_np, cmap="jet", vmin=0, vmax=6)
+        axs[0, 0].set_title('Rendered Depth', fontsize=16)
+        axs[0, 0].set_xticks([])
+        axs[0, 0].set_yticks([])
+        color_np = np.clip(color_np, 0, 1)
+        axs[1, 0].imshow(color_np, cmap="plasma")
+        axs[1, 0].set_title('Rendered RGB', fontsize=16)
+        axs[1, 0].set_xticks([])
+        axs[1, 0].set_yticks([])
+    
+        for ax in axs.flatten():
+            ax.axis('off')
+        fig.tight_layout()
+        plt.subplots_adjust(top=0.90)  # Adjust top margin
+        fig_name = str(self.output_path / "rendering_vis" / f'{frame_data:04d}.jpg')
+        fig_title = f"Mapper Color/Depth at frame"
+        plt.suptitle(fig_title, y=0.98, fontsize=20)
+        plt.savefig(fig_name, dpi=250, bbox_inches='tight')
+        plt.clf()
+        plt.close()
+
+        print("Output path: ", self.output_path)
+        #print(f"Saved rendering vis of color/depth at {frame_id:04d}_{iter:04d}.jpg")
