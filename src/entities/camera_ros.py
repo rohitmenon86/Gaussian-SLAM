@@ -88,7 +88,7 @@ class Camera():
         try:
             # Try to get the transform when the images arrive
             camera_transform = self.tf_buffer.lookup_transform(
-                'odom', 'wrist_camera_color_optical_frame', rospy.Time(0), rospy.Duration(1.0))
+                self.camera_config['ref_frame'], self.camera_config['camera_frame'], rospy.Time(0), rospy.Duration(1.0))
             with self.lock:
                 if rgb_image != None and depth_image != None:
                     self.rgb_image = rgb_image
