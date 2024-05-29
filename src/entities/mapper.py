@@ -345,12 +345,15 @@ class Mapper(object):
         # Visualise the mapping for the current frame
         with torch.no_grad():
             render_pkg_vis = render_gaussian_model(gaussian_model, keyframe["render_settings"])
-            image_vis, depth_vis = render_pkg_vis["color"], render_pkg_vis["depth"]
+            image_vis, depth_vis, radii_vis, means2d_vis, alpha_vis = render_pkg_vis["color"], render_pkg_vis["depth"], render_pkg_vis["radii"], render_pkg_vis["means2D"], render_pkg_vis["alpha"]
+
+            #"radii": radii, "means2D": means2D, "alpha": alpha
 
             rgb_frame = image_vis.clone().detach().permute(1, 2, 0)
             depth_frame = depth_vis.clone().detach().permute(1, 2, 0)
+            radii = radii_vis.clone().detach()
+            means2D = means2d_vis.clone().detach()
+            alpha = alpha_vis.clone().detach()
 
-            # Create a dictionary with the RGB and depth frames
-            frames = {'rgb': rgb_frame, 'depth': depth_frame}
-
-            return frames
+            # Create a dictionary with the 2D rendered data
+            return {'rgb': rgb_frame, 'depth': depth_frame, 'radii': radii, 'means2D': means2D, 'alpha': alpha}

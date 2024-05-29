@@ -109,7 +109,7 @@ class GaussianSLAMROS(object):
         elif frame_id in self.new_submap_frame_ids:
             return True
         return False
-
+    
     def start_new_submap(self, frame_id: int, gaussian_model: GaussianModel) -> None:
         """ Initializes a new submap, saving the current submap's checkpoint and resetting the Gaussian model.
         This function updates the submap count and optionally marks the current frame ID for new submap initiation.
@@ -138,11 +138,11 @@ class GaussianSLAMROS(object):
         return gaussian_model
 
 
-    def process(self, data) -> None:
+    def process(self, data, use_measured_pose= False) -> None:
         """ Starts the main program flow for Gaussian-SLAM, including tracking and mapping. """
         rospy.loginfo("Processing camera data")
         
-        if self.frame_id in [0, 1]:
+        if self.frame_id in [0, 1] or use_measured_pose:
             estimated_c2w = data.pose
         else:
             estimated_c2w = self.tracker.track_online(

@@ -2,7 +2,7 @@ import numpy as np
 import rospy
 from geometry_msgs.msg import Pose, PoseStamped
 from move_base_msgs.msg import MoveBaseAction, MoveBaseGoal
-from math import sin, cos
+from math import sin, cos, atan2, radians, pi, sqrt
 
 class Mapper:
   def __init__(self, mobile_manipulator, camera, table_height):
@@ -62,3 +62,22 @@ class Mapper:
       desired_overlap = 10 # Desired overlap in degrees between the views of adjacent cameras
 
       return self.generate_camera_positions(n_cameras, radius, desired_overlap)
+
+  def calculate_new_pose(self, current_pose, object_pose, theta_offset):
+        # Calculate the angle to the object
+        dx = object_pose.x - current_pose.x
+        dy = object_pose.y - current_pose.y
+        angle_to_object = atan2(dy, dx)
+
+        # Apply the theta offset
+        new_angle = angle_to_object + radians(theta_offset)
+
+        # Calculate new position that is theta_offset degrees rotated around the object
+        distance = sqrt(dx**2 + dy**2)
+        new_x = object_pose.x - distance * cos(new_angle)
+        new_y = object_pose.y - distance * sin(new_angle)
+
+        # Calculate the orientation to still point towards the object
+        orientation_to_object = atan2(-sin(new_angle), -cos(new_angle))  # Reverse angle to face the object
+
+        return new_x, new_y, orientation_to_object

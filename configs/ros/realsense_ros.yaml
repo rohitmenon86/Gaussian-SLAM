@@ -39,7 +39,7 @@ tracking:
   iterations: 200
   cam_rot_lr: 0.002
   cam_trans_lr: 0.01
-  odometry_type: "const_speed"  # gt, const_speed, odometer
+  odometry_type: "gt"  # gt, const_speed, odometer
   help_camera_initialization: False # temp option to help const_init
   init_err_ratio: 5
   odometer_method: "hybrid" # hybrid or point_to_plane

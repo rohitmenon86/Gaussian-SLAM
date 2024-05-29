@@ -5,9 +5,13 @@ import rospy
 import moveit_commander
 import actionlib
 import yaml
-from geometry_msgs.msg import Pose, PoseStamped
+from std_msgs.msg import Header
+from geometry_msgs.msg import Pose, PoseStamped, Quaternion, PoseArray, Point
+import math
 from move_base_msgs.msg import MoveBaseAction, MoveBaseGoal
 from math import sin, cos
+import random
+from trac_ik_python.trac_ik import IK
 
 class MoMaArm:
   def __init__(self, config_path = ""):
@@ -20,6 +24,9 @@ class MoMaArm:
       self.scene = moveit_commander.PlanningSceneInterface()
       #self.arm = moveit_commander.MoveGroupCommander(self.config['arm_group_name'])
       self.arm = moveit_commander.MoveGroupCommander("manipulator")
+      self.pose_pub = rospy.Publisher('/random_poses', PoseArray, queue_size=10)
+      self.center_pub = rospy.Publisher('/center_pose', PoseStamped, queue_size=10)
+      self.ik_solver = IK("world", "ur5etool0")
       print("MoMaArm configured")
 
   def move_to_joint_target(self, joint_goals):
@@ -39,9 +46,71 @@ class MoMaArm:
   def is_pose_reachable(self, pose):
       self.arm.set_pose_target(pose)
       plan = self.arm.plan()
-      if plan.joint_trajectory.points:  # If the list is not empty, a plan was found
+      #print("Plan: ", plan)
+      success, trajectory, float_val, val_dict = plan
+      #print("traj: ", trajectory)
+      if success:  # If the list is not empty, a plan was found
+          print("Reachable pose found ")
           return True
       return False
   
+  def generate_random_pose(self, center, radius, z_min, z_max):
+      pose = Pose()
+      pose.position.x = center[0] + radius * (random.random() - 0.5)
+      pose.position.y = center[1] + radius * (random.random() - 0.5)
+      pose.position.z = random.uniform(z_min, z_max)
+      pose.orientation = self.calculate_orientation_towards_center(pose.position, center)
+      return pose
   
+  def generate_random_reachable_poses(self, center, radius, num_poses, z_min, z_max):
+      reachable_poses = PoseArray()
+      reachable_poses.header = Header()
+      reachable_poses.header.frame_id = "world"
+      reachable_poses.header.stamp = rospy.Time.now()
+      for _ in range(num_poses):
+          pose = self.generate_random_pose(center, radius, z_min, z_max)
+          print("Random Pose: ", pose)
+          if self.is_pose_reachable(pose):
+              reachable_poses.poses.append(pose)
+              print(f"Reachable Pose {len(reachable_poses.poses)}: {pose}")
 
+      self.pose_pub.publish(reachable_poses)
+
+      center_pose = PoseStamped()
+      center_pose.header = reachable_poses.header
+      center_pose.pose.position = Point(center[0], center[1], center[2] if len(center) > 2 else 0)
+      center_pose.pose.orientation = Quaternion(0, 0, 0, 1)  # Default orientation
+      self.center_pub.publish(center_pose)
+      
+      return reachable_poses
+  
+  def calculate_orientation_towards_center(self, position, center):
+      # Calculate the direction vector
+      dx = position.x - center[0]
+      dy = position.y - center[1]
+      dz = position.z - center[2]  if len(center) > 2 else 0
+
+      # Normalize the direction vector
+      length = math.sqrt(dx**2 + dy**2 + dz**2)
+      if length == 0:
+          return Quaternion(0, 0, 0, 1)  # No orientation change if direction vector is zero
+
+      dx /= length
+      dy /= length
+      dz /= length
+
+      # Calculate yaw and pitch to point towards the center
+      yaw = math.atan2(dy, dx)
+      pitch = math.atan2(dz, math.sqrt(dx**2 + dy**2))
+      roll = 0  # Assuming no roll
+
+      return self.euler_to_quaternion(roll, pitch, yaw)
+
+
+  def euler_to_quaternion(self, roll, pitch, yaw):
+      qx = math.sin(roll/2) * math.cos(pitch/2) * math.cos(yaw/2) - math.cos(roll/2) * math.sin(pitch/2) * math.sin(yaw/2)
+      qy = math.cos(roll/2) * math.sin(pitch/2) * math.cos(yaw/2) + math.sin(roll/2) * math.cos(pitch/2) * math.sin(yaw/2)
+      qz = math.cos(roll/2) * math.cos(pitch/2) * math.sin(yaw/2) - math.sin(roll/2) * math.sin(pitch/2) * math.cos(yaw/2)
+      qw = math.cos(roll/2) * math.cos(pitch/2) * math.cos(yaw/2) + math.sin(roll/2) * math.sin(pitch/2) * math.sin(yaw/2)
+      
+      return Quaternion(qx, qy, qz, qw)
