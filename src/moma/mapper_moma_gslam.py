@@ -48,6 +48,7 @@ import numpy as np
 from collections import deque
 from geometry_msgs.msg import Pose, PoseStamped
 from math import sqrt, atan2, radians, cos, sin
+from utils import conversions
 
 class GSlamMapperMoMa():
   def __init__(self, gslam_config, moma_config=None) -> None:
@@ -70,7 +71,13 @@ class GSlamMapperMoMa():
     self.gslam.process(self.data, True)
 
   def render_viewpoints(self):
-     self.moma_arm.generate_random_reachable_poses()
+    reachable_poses = self.moma_arm.generate_random_reachable_poses(center=[0.72, 0.0, 0.61], radius=0.4, num_poses=10, z_min=0.75, z_max=1.0)
+
+    for pose in reachable_poses.poses:
+      c2w_np = conversions.pose_to_matrix(pose)
+      render_data = self.gslam.render_and_save(c2w_np)
+      
+
 
 
   def generate_camera_positions(self, n, radius, overlap):

@@ -180,9 +180,10 @@ class GaussianSLAMROS(object):
         save_dict_to_ckpt(self.estimated_c2ws[:self.frame_id + 1], "estimated_c2w.ckpt", directory=self.output_path)
         self.dataset.save_data()
 
-    def render_and_save(self, desired_c2w):
+    def render_and_save(self, desired_c2w, frame_id=None):
         
-        frames = self.mapper.render_online(desired_c2w, self.gaussian_model, self.camera_data)
+        render_data = self.mapper.render_online(desired_c2w, self.gaussian_model, self.camera_data)
         scaled_translation = np.round(desired_c2w[:3, 3] * 1000).astype(int)
         frame_data = (scaled_translation[0] << 20) | (scaled_translation[1] << 10) | scaled_translation[2]
-        self.logger.vis_rendering(frames["rgb"], frames["depth"],frame_data)
+        self.logger.vis_rendering(render_data["rgb"], render_data["depth"],frame_data)
+        return render_data

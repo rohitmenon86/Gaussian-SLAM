@@ -12,6 +12,7 @@ from move_base_msgs.msg import MoveBaseAction, MoveBaseGoal
 from math import sin, cos
 import random
 from trac_ik_python.trac_ik import IK
+from utils import conversions
 
 class MoMaArm:
   def __init__(self, config_path = ""):
@@ -104,13 +105,7 @@ class MoMaArm:
       pitch = math.atan2(dz, math.sqrt(dx**2 + dy**2))
       roll = 0  # Assuming no roll
 
-      return self.euler_to_quaternion(roll, pitch, yaw)
+      return conversions.euler_to_quaternion(roll, pitch, yaw)
 
 
-  def euler_to_quaternion(self, roll, pitch, yaw):
-      qx = math.sin(roll/2) * math.cos(pitch/2) * math.cos(yaw/2) - math.cos(roll/2) * math.sin(pitch/2) * math.sin(yaw/2)
-      qy = math.cos(roll/2) * math.sin(pitch/2) * math.cos(yaw/2) + math.sin(roll/2) * math.cos(pitch/2) * math.sin(yaw/2)
-      qz = math.cos(roll/2) * math.cos(pitch/2) * math.sin(yaw/2) - math.sin(roll/2) * math.sin(pitch/2) * math.cos(yaw/2)
-      qw = math.cos(roll/2) * math.cos(pitch/2) * math.cos(yaw/2) + math.sin(roll/2) * math.sin(pitch/2) * math.sin(yaw/2)
-      
-      return Quaternion(qx, qy, qz, qw)
+  
