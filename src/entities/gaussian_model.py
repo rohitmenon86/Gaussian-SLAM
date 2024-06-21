@@ -37,6 +37,7 @@ class GaussianModel:
             "denom",
             "spatial_lr_scale",
             "optimizer",
+            "num_views"
         ]
         self.max_sh_degree = sh_degree
         self.active_sh_degree = sh_degree  # temp
@@ -54,6 +55,7 @@ class GaussianModel:
         self.spatial_lr_scale = 1
         self.setup_functions()
         self.isotropic = isotropic
+        self.num_views = []
 
     def restore_from_params(self, params_dict, training_args):
         self.training_setup(training_args)
@@ -414,3 +416,13 @@ class GaussianModel:
                 print(f"{key}: {np.array(value)}")  # Convert to numpy array and print
             else:
                 print(f"{key}: {value}")
+
+    def save_gaussian_model(self, file_path: str):
+        params_dict = self.capture_dict()
+        with open(file_path, 'w') as file:
+            for key, value in params_dict.items():
+                if hasattr(value, 'numpy'):  # Check if it's a tensor
+                    np_value = np.array(value)  # Convert to numpy array
+                    file.write(f"{key}: {np_value}\n")
+                else:
+                    file.write(f"{key}: {value}\n")

@@ -48,7 +48,7 @@ class GaussianSLAMROS(object):
         self.mapping_frame_ids = frame_ids[::config["mapping"]["map_every"]] + [self.n_frames - 1]
         self.frame_id = 0
 
-        self.output_path = Path("/home/rohit/workspace/ros1/gsplat_ws/src/gslam/gaussian_slam/output/ros_live/scene0/")
+        self.output_path = Path("/home/rohit/workspace/ros1/gsplat_ws/src/gaussian_slam/output/ros_live/scene0/")
         save_dict_to_yaml(config, "config.yaml", directory=self.output_path)
 
         self.submap_using_motion_heuristic = config["mapping"]["submap_using_motion_heuristic"]

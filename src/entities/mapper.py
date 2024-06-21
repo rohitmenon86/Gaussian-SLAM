@@ -280,6 +280,7 @@ class Mapper(object):
 
         _, gt_color, gt_depth, _ = data[frame_id]
         estimate_w2c = np.linalg.inv(estimate_c2w)
+        print("+++++++++++++++++C2W++++++++++++++++++++++++", estimate_c2w)
 
         color_transform = torchvision.transforms.ToTensor()
         keyframe = {
@@ -324,6 +325,9 @@ class Mapper(object):
         # Log the mapping numbers for the current frame
         self.logger.log_mapping_iteration(frame_id, new_pts_num, gaussian_model.get_size(),
                                           optimization_time/max_iterations, opt_dict)
+        self.logger.log_gaussian_model_params(gaussian_model.capture_dict(), frame_id)
+        #ply_path = str(self.logger.output_path / "mesh_"f'{frame_id:04d}.ply')
+        #gaussian_model.save_ply(ply_path)
         return opt_dict
     
     def render_online(self, estimate_c2w: np.ndarray, gaussian_model: GaussianModel, data: CameraData) -> dict:

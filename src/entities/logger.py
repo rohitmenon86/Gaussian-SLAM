@@ -8,13 +8,14 @@ import torch
 import wandb
 import rospy
 from sensor_msgs.msg import Image
+import csv
 
 class Logger(object):
 
     def __init__(self, output_path: Union[Path, str], use_wandb=False) -> None:
         self.output_path = Path(output_path)
         print("Output path", self.output_path)
-        self.output_path = Path("/home/rohit/workspace/ros1/gsplat_ws/src/gaussian_slam/output/ros_live/scene0")
+        self.output_path = Path("/home/rohit/workspace/ros1/gsplat_ws/src/gslam/gaussian_slam/output/ros_live/scene0")
         (self.output_path / "mapping_vis").mkdir(exist_ok=True, parents=True)
         self.use_wandb = use_wandb
 
@@ -198,7 +199,7 @@ class Logger(object):
         print("Output path: ", self.output_path)
         print(f"Saved rendering vis of color/depth at {frame_id:04d}_{iter:04d}.jpg")
 
-    def vis_rendering(self, color, depth, frame_data=None, seeding_mask=None) -> None:
+    def vis_rendering(self, render_data=None, frame_data=None, rendered_color=None, rendered_depth=None, seeding_mask=None) -> None:
         """
         Visualization of depth, color images and save to file.
 
@@ -209,12 +210,21 @@ class Logger(object):
             img_dir (str): the directory to save the visualization.
             seeding_mask: used in mapper when adding gaussians, if not none.
         """
+        if render_data is not None:
+            color = render_data["rgb"]
+            depth = render_data["depth"]
+        elif rendered_color is not None and rendered_depth is not None:
+            color = rendered_color
+            depth = rendered_depth
+        else:
+            raise("No valid data for rendering")
+
         depth_np = depth.detach().cpu().numpy()
         color = torch.round(color * 255.0) / 255.0
         color_np = color.detach().cpu().numpy()
         print("Depth image dim: ", np.shape(depth_np))
                 # make errors >=5cm noticeable
-        depth_residual = np.clip(depth_residual, 0.0, 0.05)
+        #depth_residual = np.clip(depth_residual, 0.0, 0.05)
 
         
         # Determine Aspect Ratio and Figure Size
@@ -224,15 +234,15 @@ class Logger(object):
         fig_width = fig_height * aspect_ratio * 1.2
 
         fig, axs = plt.subplots(2, 1, figsize=(fig_width, fig_height))
-        axs[0, 0].imshow(depth_np, cmap="jet", vmin=0, vmax=6)
-        axs[0, 0].set_title('Rendered Depth', fontsize=16)
-        axs[0, 0].set_xticks([])
-        axs[0, 0].set_yticks([])
+        axs[0].imshow(depth_np, cmap="jet", vmin=0, vmax=6)
+        axs[0].set_title('Rendered Depth', fontsize=16)
+        axs[0].set_xticks([])
+        axs[0].set_yticks([])
         color_np = np.clip(color_np, 0, 1)
-        axs[1, 0].imshow(color_np, cmap="plasma")
-        axs[1, 0].set_title('Rendered RGB', fontsize=16)
-        axs[1, 0].set_xticks([])
-        axs[1, 0].set_yticks([])
+        axs[1].imshow(color_np, cmap="plasma")
+        axs[1].set_title('Rendered RGB', fontsize=16)
+        axs[1].set_xticks([])
+        axs[1].set_yticks([])
     
         for ax in axs.flatten():
             ax.axis('off')
@@ -247,3 +257,51 @@ class Logger(object):
 
         print("Output path: ", self.output_path)
         #print(f"Saved rendering vis of color/depth at {frame_id:04d}_{iter:04d}.jpg")
+
+        file_path = str(self.output_path / "rendering_vis" / f'{frame_data:04d}.txt')
+        self.log_render_data_to_file(render_data["radii"], render_data["means2D"], render_data["alpha"], file_path)
+    
+    def log_render_data_to_file(self, radii, means2D, alpha, file_path):
+    # Convert tensors to numpy arrays
+        radii_np = radii.cpu().numpy()
+        means2D_np = means2D.cpu().numpy()
+        alpha_np = alpha.cpu().numpy()
+        
+        with open(file_path, 'w') as file:
+            # Save radii
+            file.write("Radii:\n")
+            file.write(np.array2string(radii_np, threshold=radii_np.size, separator=', ') + "\n")
+            
+            # Save means2D
+            file.write("Means2D:\n")
+            file.write(np.array2string(means2D_np, threshold=means2D_np.size, separator=', ') + "\n")
+            
+            # Save alpha
+            file.write("Alpha:\n")
+            file.write(np.array2string(alpha_np, threshold=alpha_np.size, separator=', ') + "\n")
+
+    def log_gaussian_model_params(self, params_dict, frame_id):
+        output_dir = self.output_path / "mapping_vis" / f'{frame_id:04d}'
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        for key, value in params_dict.items():
+            file_path = output_dir / f'{key}.csv'
+            with open(file_path, 'w', newline='') as file:
+                writer = csv.writer(file)
+                if hasattr(value, 'numpy'):  # Check if it's a tensor
+                    np_value = np.array(value)  # Convert to numpy array
+                    writer.writerows(np_value.reshape(-1, np_value.shape[-1]))  # Write array rows
+                else:
+                    writer.writerow([value])  # Write a single value if not an array
+
+    def log_gaussian_model_params_old(self, params_dict, frame_id):
+
+        file_path = str(self.output_path / "mapping_vis" / f'{frame_id:04d}.txt')
+        with open(file_path, 'w') as file:
+            for key, value in params_dict.items():
+                if hasattr(value, 'numpy'):  # Check if it's a tensor
+                    np_value = np.array(value)  # Convert to numpy array
+                    array_str = np.array2string(np_value, threshold=np_value.size, separator=', ')
+                    file.write(f"{key}: {array_str}\n")
+                else:
+                    file.write(f"{key}: {value}\n")

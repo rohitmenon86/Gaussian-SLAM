@@ -30,7 +30,7 @@ class CameraData():
         self.depth_array = depth
         self.c2w = c2w
         self.timestamp = timestamp
-        self.pose = np.eye(4)
+        self.pose = c2w #np.eye(4)
     
     def __getitem__(self, index):
         return index, self.rgb_array, self.depth_array, self.c2w
