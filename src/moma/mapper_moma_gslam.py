@@ -10,8 +10,10 @@ import yaml
 
 script_dir = os.path.dirname(__file__)  # Gets the directory where the script is running
 parent_dir = os.path.dirname(script_dir)  # Gets the parent directory (project directory)
+pp_dir = os.path.dirname(parent_dir)  # Gets the parent directory (project directory)
 src_dir = os.path.join(parent_dir, 'src')  # Constructs the path to the 'src' folder
 
+sys.path.append(pp_dir)
 sys.path.append(parent_dir)
 # Add 'src' directory to the Python path
 sys.path.append(src_dir)
@@ -48,7 +50,7 @@ import numpy as np
 from collections import deque
 from geometry_msgs.msg import Pose, PoseStamped
 from math import sqrt, atan2, radians, cos, sin
-from utils import conversions
+from utils import conversions, math_utils
 
 class GSlamMapperMoMa():
   def __init__(self, gslam_config, moma_config=None) -> None:
@@ -61,6 +63,19 @@ class GSlamMapperMoMa():
     self.data = CameraData(self.camera.intrinsics, self.camera.image_height, self.camera.image_width)
     self.gslam = GaussianSLAMROS(gslam_config, self.data)
 
+    self.start_server  = actionlib.SimpleActionServer('~start', StartAction, self.render_viewpoints, False)
+    
+    self.moma_arm.move_to_named_target("obs_pose_3")
+    self.train_gslam_on_current_camera_data()
+
+    self.moma_arm.move_to_named_target("obs_pose_1")
+    self.train_gslam_on_current_camera_data()
+
+    self.moma_arm.move_to_named_target("obs_pose_2")
+    self.train_gslam_on_current_camera_data()
+
+
+    self.start_server.start()
 
   def update_camera_data(self):
     self.data.set_data(*self.camera.get_latest_data())
@@ -70,61 +85,17 @@ class GSlamMapperMoMa():
     self.update_camera_data()
     self.gslam.process(self.data, True)
 
-  def render_viewpoints(self):
-    reachable_poses = self.moma_arm.generate_random_reachable_poses(center=[0.72, 0.0, 0.61], radius=0.4, num_poses=10, z_min=0.75, z_max=1.0)
+  def render_viewpoints(self, goal):
+    reachable_poses = self.moma_arm.generate_random_reachable_poses(center=[0.8, 0.0, 0.6], radius=0.5, num_poses=10, z_min=0.8, z_max=1.2)
 
+    i = 2
     for pose in reachable_poses.poses:
       c2w_np = conversions.pose_to_matrix(pose)
-      render_data = self.gslam.render_and_save(c2w_np)
-      
+      render_data = self.gslam.render_and_save(c2w_np, i)
+      self.moma_arm.move_to_cartesian_target(pose)
+      self.train_gslam_on_current_camera_data()
+      i = i + 1
 
-
-
-  def generate_camera_positions(self, n, radius, overlap):
-    """
-    Generate camera positions on a spherical dome over a table to ensure complete coverage.
-
-    :param n: Number of camera positions to generate
-    :param radius: Radius of the imaginary sphere centered over the table
-    :param overlap: Desired overlap in degrees between the views of adjacent cameras
-    """
-    fov_rad = np.deg2rad(self.camera.fov_horizontal)
-    overlap_rad = np.deg2rad(overlap)
-    angular_distance = fov_rad - overlap_rad
-
-    viewpoints = []
-    for i in range(n):
-      phi = np.arccos(1 - 2 * (i + 0.5) / n)
-      theta = angular_distance * (i + 0.5)
-      
-      x = radius * np.sin(phi) * np.cos(theta)
-      y = radius * np.sin(phi) * np.sin(theta)
-      z = radius * np.cos(phi) + self.table_height  # Adjust z to be above the table
-
-      # Create a pose to check reachability
-      pose = Pose()
-      pose.position.x = x
-      pose.position.y = y
-      pose.position.z = z
-      pose.orientation.w = 1.0  # Assuming the camera always faces downward
-
-      # Check if the pose is reachable and valid
-      if self.mobile_manipulator.arm.is_pose_reachable(pose):
-        viewpoints.append((x, y, z))
-      else:
-        rospy.loginfo("Pose at ({}, {}, {}) is not reachable.".format(x, y, z))
-
-    return viewpoints
-
-  def find_viewpoints(self):
-      """
-      High-level function to find and return all valid viewpoints over a table.
-      """
-      n_cameras = 10       # Number of cameras
-      radius = 1           # Radius of the sphere
-      desired_overlap = 10 # Desired overlap in degrees between the views of adjacent cameras
-
-      return self.generate_camera_positions(n_cameras, radius, desired_overlap)
 
   def calculate_new_pose(self, current_pose, object_pose, theta_offset):
         # Calculate the angle to the object
@@ -145,8 +116,29 @@ class GSlamMapperMoMa():
 
         return new_x, new_y, orientation_to_object
 
+def generate_and_order_views(current_pose, center_position, num_views, fov, desired_fov_overlap, min_distance, min_z, max_z):
+    points = math_utils.fibonacci_sphere_top_half(num_views, radius=1.0, min_distance=min_distance, min_z=min_z, max_z=max_z)
+
+    views = []
+    for point in points:
+        pose = Pose()
+        pose.position.x = point[0] + center_position[0]
+        pose.position.y = point[1] + center_position[1]
+        pose.position.z = point[2] + center_position[2]
+        pose.orientation = conversions.direction_to_quaternion(point, center_position)
+        views.append(pose)
+
+    # Calculate distance from current pose to each generated pose
+    def distance_from_current(pose):
+        return np.sqrt((pose.position.x - current_pose.position.x)**2 + 
+                       (pose.position.y - current_pose.position.y)**2 + 
+                       (pose.position.z - current_pose.position.z)**2)
+
+    views.sort(key=distance_from_current)
+    return views
+
 def main(args):
-    rospy.init_node('gslam_mapper_moma')
+    rospy.init_node('mapper_moma_gslam')
     rospack = rospkg.RosPack()
     gslam_pkg_path = rospack.get_path('gaussian_slam_ros')
     gslam_config_path = rospy.get_param("config_path", "configs/ros/realsense_ros.yaml")
@@ -162,3 +154,7 @@ def main(args):
     gslam_mapper_moma = GSlamMapperMoMa(gslam_config)
     rospy.loginfo("...gslam_mapper_moma configured")
     rospy.spin()
+
+if __name__ == "__main__":
+    print("Starting")
+    main(sys.argv)
